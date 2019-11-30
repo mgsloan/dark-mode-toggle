@@ -143,8 +143,7 @@ export class DarkModeToggle extends HTMLElement {
       });
     }
     // Set initial state, giving preference to a remembered value, then the
-    // native value (if supported), and eventually defaulting to a light
-    // experience.
+    // native value (if supported), and then basing it off time.
     const rememberedValue = store.getItem(NAME);
     if (rememberedValue && [DARK, LIGHT].includes(rememberedValue)) {
       this.mode = rememberedValue;
@@ -154,7 +153,11 @@ export class DarkModeToggle extends HTMLElement {
       this.mode = matchMedia(MQ_LIGHT).matches ? LIGHT : DARK;
     }
     if (!this.mode) {
-      this.mode = LIGHT;
+      if (this._isDayTime()) {
+        this.mode = LIGHT;
+      } else {
+        this.mode = DARK;
+      }
     }
     if (this.permanent && !rememberedValue) {
       store.setItem(NAME, this.mode);
@@ -178,12 +181,14 @@ export class DarkModeToggle extends HTMLElement {
     [this._lightRadio, this._darkRadio].forEach((input) => {
       input.addEventListener('change', () => {
         this.mode = this._lightRadio.checked ? LIGHT : DARK;
+        this._storeMode();
         this._updateCheckbox();
         this._dispatchEvent(COLOR_SCHEME_CHANGE, {colorScheme: this.mode});
       });
     });
     this._darkCheckbox.addEventListener('change', () => {
       this.mode = this._darkCheckbox.checked ? DARK : LIGHT;
+      this._storeMode();
       this._updateRadios();
       this._dispatchEvent(COLOR_SCHEME_CHANGE, {colorScheme: this.mode});
     });
@@ -202,6 +207,28 @@ export class DarkModeToggle extends HTMLElement {
     this._dispatchEvent(PERMANENT_COLOR_SCHEME, {
       permanent: this.permanent,
     });
+  }
+
+  _storeMode() {
+    /* Set cookie that expires at 6pm or 6am */
+    const clockHour = (new Date()).getHours();
+    let age = 0;
+    if (clockHour < 6) {
+      age = 60 * 60 * (6 - clockHour);
+    } else (clockHour < 18) {
+      age = 60 * 60 * (18 - clockHour);
+    } else {
+      age = 60 * 60 * (30 - clockHour);
+    }
+    document.cookie = "darkMode=" + this.mode + "; max-age=" + age + "; path=/";
+  }
+
+  _isDayTime() {
+    // Would be great to base this off sunrise / sunset times from
+    // lat / long, but seems overkill to ask user for geolocation
+    // permissions.
+    const clockHour = (new Date()).getHours();
+    return clockHour >= 6 && clockHour < 18;
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
