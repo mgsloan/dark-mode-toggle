@@ -23,7 +23,6 @@ const LIGHT = 'light';
 const DARK = 'dark';
 const NO_PREFERENCE = 'no-preference';
 const MQ_DARK = `(${PREFERS_COLOR_SCHEME}:${DARK})`;
-const MQ_LIGHT = `(${PREFERS_COLOR_SCHEME}:${LIGHT}),(${PREFERS_COLOR_SCHEME}:${NO_PREFERENCE})`;
 const LINK_REL_STYLESHEET = 'link[rel=stylesheet]';
 const REMEMBER = 'remember';
 const LEGEND = 'legend';
@@ -144,24 +143,34 @@ export class DarkModeToggle extends HTMLElement {
     }
     // Set initial state, giving preference to a remembered value, then the
     // native value (if supported), and then basing it off time.
-    const rememberedValue = store.getItem(NAME);
+    const rememberedValue = this._getStoredMode();
     if (rememberedValue && [DARK, LIGHT].includes(rememberedValue)) {
+      console.log("Using stored mode: " + rememberedValue);
       this.mode = rememberedValue;
       this._permanentCheckbox.checked = true;
       this.permanent = true;
     } else if (hasNativePrefersColorScheme) {
-      this.mode = matchMedia(MQ_LIGHT).matches ? LIGHT : DARK;
-    }
-    if (!this.mode) {
-      if (this._isDayTime()) {
-        this.mode = LIGHT;
-      } else {
+      // My browser seems to report a preference for light, so use
+      // time based matching in that case.
+      if (matchMedia(MQ_DARK).matches) {
+        console.log("Dark mode based on browser preference.");
         this.mode = DARK;
       }
     }
+    if (!this.mode) {
+      if (this._isDayTime()) {
+        console.log("Light mode based on time.");
+        this.mode = LIGHT;
+      } else {
+        console.log("Dark mode based on time.");
+        this.mode = DARK;
+      }
+    }
+    /*
     if (this.permanent && !rememberedValue) {
       store.setItem(NAME, this.mode);
     }
+    */
 
     // Default to toggle appearance.
     if (!this.appearance) {
@@ -210,17 +219,30 @@ export class DarkModeToggle extends HTMLElement {
   }
 
   _storeMode() {
-    /* Set cookie that expires at 6pm or 6am */
-    const clockHour = (new Date()).getHours();
-    let age = 0;
-    if (clockHour < 6) {
-      age = 60 * 60 * (6 - clockHour);
-    } else (clockHour < 18) {
-      age = 60 * 60 * (18 - clockHour);
-    } else {
-      age = 60 * 60 * (30 - clockHour);
+    store.setItem(NAME + "-last", this.mode);
+    store.setItem(NAME + "-time", new Date().toString());
+  }
+
+  _getStoredMode() {
+    const rawExpiryTime = store.getItem(NAME + "-time");
+    const storedMode = store.getItem(NAME + "-last");
+    if (rawExpiryTime && storedMode) {
+      const expiryTime = new Date(rawExpiryTime);
+      const clockHours = expiryTime.getHours();
+      if (expiryTime < 6) {
+        expiryTime.setHours(6);
+      } else if (clockHours < 18) {
+        expiryTime.setHours(18);
+      } else {
+        expiryTime.setUTCDate(expiryTime.getUTCDate() + 1);
+        expiryTime.setHours(6);
+      }
+      if (new Date() < expiryTime) {
+        return storedMode;
+      } else {
+        return null;
+      }
     }
-    document.cookie = "darkMode=" + this.mode + "; max-age=" + age + "; path=/";
   }
 
   _isDayTime() {
